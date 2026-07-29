@@ -250,3 +250,13 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
   font-size: 0.85rem;
   color: var(--fg);
 }
+
+/* ---- Download poster ---- */
+.download {
+  display: block;
+  width: 100%;
+  margin-top: 0.75rem;
+  background: var(--fg);
+  color: #fff;
+}
+.download[hidden] { display: none; }

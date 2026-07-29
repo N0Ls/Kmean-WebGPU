@@ -32,6 +32,7 @@ const infoHex = $<HTMLSpanElement>("infoHex");
 const infoRgb01 = $<HTMLSpanElement>("infoRgb01");
 const infoRgb255 = $<HTMLSpanElement>("infoRgb255");
 const infoHsl = $<HTMLSpanElement>("infoHsl");
+const downloadButton = $<HTMLButtonElement>("download");
 
 // Slider value read-outs + black fill on the left of the track.
 kInput.addEventListener("input", () => {
@@ -87,6 +88,7 @@ fileInput.addEventListener("change", async () => {
     paletteColors = [];
     selectedIndex = 0;
     colorInfo.hidden = true;
+    downloadButton.hidden = true;
     runButton.disabled = false;
     shuffleButton.disabled = false;
   } catch (err) {
@@ -141,7 +143,7 @@ async function runClusterization() {
 // ---- Palette + color info ----
 
 function renderPaletteUI(centroids: Float32Array, k: number) {
-  const entries: (RGB & { count: number })[] = [];
+  const entries: (RGB & { count: number; })[] = [];
   for (let i = 0; i < k; i++) {
     entries.push({
       r: Math.round(centroids[i * 4]),
@@ -168,7 +170,62 @@ function renderPaletteUI(centroids: Float32Array, k: number) {
   if (paletteColors.length) {
     updateColorInfo(paletteColors[selectedIndex]);
     colorInfo.hidden = false;
+    downloadButton.hidden = false;
   }
+}
+
+// ---- Download poster: image (padded) with the palette underneath ----
+
+downloadButton.addEventListener("click", () => downloadPoster());
+
+async function downloadPoster() {
+  if (!paletteColors.length || !originalImg.complete) return;
+
+  const iw = originalImg.naturalWidth || currentImage?.width || 0;
+  const ih = originalImg.naturalHeight || currentImage?.height || 0;
+  if (!iw || !ih) return;
+
+  // Cap the longest side so the exported poster stays a sensible size.
+  const scale = Math.min(1, 1600 / Math.max(iw, ih));
+  const drawW = Math.max(1, Math.round(iw * scale));
+  const drawH = Math.max(1, Math.round(ih * scale));
+
+  // One uniform spacing value: the outer padding and the gaps between swatches.
+  const gap = Math.round(drawW * 0.015);
+  const swatchH = Math.round(drawW * 0.14);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = drawW + gap * 2;
+  canvas.height = gap + drawH + gap + swatchH + gap;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(originalImg, gap, gap, drawW, drawH);
+
+  // Palette swatches span the image width, separated by `gap`-wide white strips.
+  const paletteY = gap + drawH + gap;
+  const n = paletteColors.length;
+  const swatchW = (drawW - gap * (n - 1)) / n;
+  for (let i = 0; i < n; i++) {
+    const x = gap + i * (swatchW + gap);
+    const { r, g, b } = paletteColors[i];
+    ctx.fillStyle = toHex(r, g, b);
+    ctx.fillRect(Math.round(x), paletteY, Math.round(swatchW), swatchH);
+  }
+
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/png"),
+  );
+  if (!blob) return;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(fileLabel.textContent || "palette").replace(/\.[^.]+$/, "")}-palette.png`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function selectColor(i: number) {
