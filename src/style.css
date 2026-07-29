@@ -1,0 +1,252 @@
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --fg: #000000;
+  --muted: #9a9a9a;
+  --line: #e4e4e4;
+  --line-strong: #cfcfcf;
+  font-family: "Montserrat", system-ui, -apple-system, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 1rem;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+}
+
+.app { max-width: 600px; margin: 0 auto; }
+
+/* ---- Title ---- */
+header h1 {
+  margin: 0 0 1rem;
+  font-weight: 200;
+  font-size: 1.75rem;
+  line-height: 1.15;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+/* ---- Choose image ---- */
+.file { display: block; width: 100%; cursor: pointer; margin-bottom: 1rem; }
+.file input { display: none; }
+.file span {
+  display: block;
+  padding: 0.5rem;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+.file:hover span { border-color: var(--fg); color: var(--fg); }
+
+/* ---- Sliders ---- */
+.control { margin-bottom: 0.5rem; }
+.control-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.4rem;
+}
+.control-label { font-size: 0.95rem; color: var(--fg); }
+.control-value { font-size: 1.1rem; font-weight: 700; font-style: italic; color: var(--fg); }
+
+/* Track is 2px; the input is taller so the thumb centers on it vertically. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+/* WebKit: no native fill, so paint it with a gradient driven by --fill. */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  background: linear-gradient(to right, var(--fg) 0 var(--fill, 0%), var(--line) var(--fill, 0%));
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px; /* (track 2px - thumb 14px) / 2 */
+  background: var(--fg);
+  border: none;
+}
+/* Firefox: native track + progress fill. */
+input[type="range"]::-moz-range-track { height: 2px; background: var(--line); }
+input[type="range"]::-moz-range-progress { height: 2px; background: var(--fg); }
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  background: var(--fg);
+}
+
+/* ---- Action buttons ---- */
+.actions { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+button {
+  flex: 1;
+  padding: 0.9rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  border: 1px solid var(--fg);
+  cursor: pointer;
+}
+#run { background: var(--fg); color: #fff; }
+#shuffle { background: #fff; color: var(--fg); }
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ---- Before/after compare slider ---- */
+.images { margin: 0; }
+.compare {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #f0f0f0;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+.compare-quantized {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.compare-original {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  /* Reveal the original from the left edge up to the handle. */
+  clip-path: inset(0 calc(100% - var(--pos, 50%)) 0 0);
+}
+.compare-labels {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.compare-labels span {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  letter-spacing: 0.3px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+.compare-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--pos, 50%);
+  width: 2px;
+  background: #fff;
+  transform: translateX(-1px);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+.compare-handle .grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+}
+.compare-handle .grip::before,
+.compare-handle .grip::after {
+  content: "";
+  border-style: solid;
+}
+.compare-handle .grip::before {
+  border-width: 5px 6px 5px 0;
+  border-color: transparent #444 transparent transparent;
+  margin-right: 5px;
+}
+.compare-handle .grip::after {
+  border-width: 5px 0 5px 6px;
+  border-color: transparent transparent transparent #444;
+  margin-left: 5px;
+}
+
+/* ---- Palette ---- */
+.palette {
+  display: flex;
+  gap: 6px;
+  margin-top: 0.5rem;
+}
+.palette:empty { display: none; }
+.swatch {
+  flex: 1;
+  height: 90px;
+  padding: 0;
+  border: none;
+  background: #ccc;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.1s;
+}
+.swatch:hover { transform: translateY(-2px); }
+.swatch.selected { outline: 2px solid var(--fg); outline-offset: 2px; }
+.swatch.selected::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -16px;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--fg);
+}
+
+/* ---- Color info ---- */
+.color-info {
+  display: flex;
+  align-items: stretch;
+  min-height: 150px;
+  max-height: 150px;
+  margin-top: 1rem;
+  background: #fff;
+  color: var(--fg);
+  border: 1px solid var(--fg);
+}
+/* Square block of the selected color, flush to the left edge. */
+.color-info-swatch {
+  flex: 0 0 110px;
+  background: #ccc;
+}
+.color-info-rows {
+  flex: 1;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.color-info .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+.color-info-key { font-size: 0.9rem; font-weight: 700; font-style: italic; color: var(--fg); }
+.color-info-value {
+  font-size: 0.85rem;
+  color: var(--fg);
+}

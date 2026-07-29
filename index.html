@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebGPU K-means Palette Finder</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>WebGPU - K-means  </br> Palette Finder</h1>
+      </header>
+
+      <label class="file">
+        <input type="file" id="file" accept="image/*" />
+        <span id="fileLabel">Choose image...</span>
+      </label>
+
+      <div class="control">
+        <div class="control-head">
+          <span class="control-label">Colors (k)</span>
+          <output class="control-value" id="kOut">6</output>
+        </div>
+        <input type="range" id="k" min="2" max="16" step="1" value="6" />
+      </div>
+
+      <div class="control">
+        <div class="control-head">
+          <span class="control-label">Max iterations</span>
+          <output class="control-value" id="iterOut">30</output>
+        </div>
+        <input type="range" id="iters" min="1" max="50" step="1" value="30" />
+      </div>
+
+      <div class="actions">
+        <button id="run" disabled>Run</button>
+        <button id="shuffle" disabled title="Try a different k-means++ seeding">Shuffle</button>
+      </div>
+
+      <section class="images" id="images" hidden>
+        <div class="compare" id="compare">
+          <canvas id="output" class="compare-quantized"></canvas>
+          <img id="original" class="compare-original" alt="original image" />
+          <div class="compare-labels">
+            <span>Original</span>
+            <span>Quantized</span>
+          </div>
+          <div class="compare-handle" id="compareHandle"><span class="grip"></span></div>
+        </div>
+      </section>
+
+      <section class="palette" id="palette"></section>
+
+      <div class="color-info" id="colorInfo" hidden>
+        <div class="color-info-swatch" id="infoSwatch"></div>
+        <div class="color-info-rows">
+          <div class="row"><span class="color-info-key">Hex</span><span class="color-info-value" id="infoHex"></span></div>
+          <div class="row"><span class="color-info-key">RGB (0-1)</span><span class="color-info-value" id="infoRgb01"></span></div>
+          <div class="row"><span class="color-info-key">RGB (0-255)</span><span class="color-info-value" id="infoRgb255"></span></div>
+          <div class="row"><span class="color-info-key">HSL</span><span class="color-info-value" id="infoHsl"></span></div>
+        </div>
+      </div>
+
+      <script type="module" src="/src/main.ts"></script>
+    </main>
+  </body>
+</html>
