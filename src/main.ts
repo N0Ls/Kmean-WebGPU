@@ -1,12 +1,9 @@
 import "./style.css";
 import { initWebGPU } from "./gpu/device";
 import { loadImageToPixels, type LoadedImage } from "./image";
-import { PaletteFinder, kmeansPlusPlusInit, findPalettePerceptual } from "./palette-finder";
+import { PaletteFinder } from "./palette-finder";
 
 interface RGB { r: number; g: number; b: number; }
-
-// Set false to revert to the original all-GPU RGB k-means.
-const PERCEPTUAL = true;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -115,22 +112,10 @@ async function runClusterization() {
     const k = Number(kInput.value);
     const maxIterations = Number(itersInput.value);
 
-    if (PERCEPTUAL) {
-      // Cluster in CIELAB over a sqrt(count)-weighted colour histogram (CPU),
-      // then let the GPU render the quantized image against those centroids
-      // (maxIterations: 0 = no Lloyd loop, just the final assign/quantize/blit).
-      const init = findPalettePerceptual(currentImage.pixels, k, seed, maxIterations);
-      const result = await finder.run(currentImage, init, { k, maxIterations: 0 });
-      renderPaletteUI(result.centroids, k);
-    } else {
-      const init = kmeansPlusPlusInit(currentImage.pixels, k, seed);
-      const result = await finder.run(currentImage, init, {
-        k,
-        maxIterations,
-        onIteration: (_iter, centroids) => renderPaletteUI(centroids, k),
-      });
-      renderPaletteUI(result.centroids, k);
-    }
+    // Perceptual k-means runs on the GPU: histogram + weighted Lloyd loop in CIELAB,
+    // then the quantized preview is rendered against the final centroids.
+    const result = await finder.run(currentImage, { k, maxIterations, seed });
+    renderPaletteUI(result.centroids, k);
   } catch (err) {
     reportError(err);
   } finally {

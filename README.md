@@ -13,37 +13,51 @@ Open the printed URL in a **WebGPU-capable browser** (recent Chrome for example)
 
 ## How it works
 
-K-means alternates two steps until the centroids stop moving:
+The palette is clustered **perceptually**: in CIELAB (so distance ≈ how different
+two colours *look*) over a colour histogram weighted by `√count` (so a small vivid
+accent isn't outvoted by a big flat region). The whole clustering loop runs on the
+GPU. See [docs/perceptual-palette.md](docs/perceptual-palette.md) for the why.
 
-1. **Assign** — every pixel picks its nearest centroid (by squared RGB distance).
-2. **Update** — each centroid becomes the mean color of its assigned pixels.
+K-means alternates two steps until the iteration budget runs out:
+
+1. **Assign** — every colour picks its nearest centroid (squared distance in Lab).
+2. **Update** — each centroid becomes the `√count`-weighted mean of its colours.
 
 ### GPU mapping
 
 | Pass | Shader | Parallelism | Notes |
 |------|--------|-------------|-------|
-| Assign + accumulate | `assign.wgsl` | one thread / pixel | Finds nearest centroid, scatter-adds color into per-cluster accumulators with **integer atomics** (`atomicAdd`). |
-| Finalize | `finalize.wgsl` | one thread / centroid | `newCentroid = sum / count`; re-seeds empty clusters. |
-| Quantize | `quantize.wgsl` | one thread / pixel | Writes each pixel's centroid color into a storage texture (the render target). |
+| Histogram | `histogram.wgsl` | one thread / pixel | Atomic-bins pixels into 2¹⁵ bins (5 bits/channel); keeps sum RGB + count per bin. |
+| Bin prep | `binprep.wgsl` | one thread / bin | Average RGB → Lab; weight = `√count`. |
+| Assign + accumulate | `bassign.wgsl` | one thread / bin | Nearest centroid in Lab; scatter-adds the weighted Lab sums into per-cluster accumulators. |
+| Finalize | `bfinalize.wgsl` | one thread / centroid | `newCentroid = Σ(w·lab) / Σw`; re-seeds empty clusters; also emits centroid RGB + count. |
+| Quantize | `quantize.wgsl` | one thread / pixel | Assigns each pixel in Lab and writes its centroid colour into a storage texture. |
 | Blit | `blit.wgsl` | fullscreen triangle | Draws the storage texture to the canvas. |
 
-The accumulators are `atomic<u32>` because WGSL atomics are integer-only. Since
-RGB channels are 0–255, the integer sums are exact. Cluster counts are stashed
-in the centroid's `.w` so the UI can show each color's proportion.
+WGSL atomics are integer-only, so the assign pass accumulates the (fractional)
+weighted Lab sums in **fixed point** — scale by a constant, truncate, and let the
+scale cancel in the finalize divide. `a`/`b` are biased by +128 to stay
+non-negative. Cluster counts ride in the centroid's `.w` so the UI can show each
+colour's proportion.
 
-`kmeansPlusPlusInit` (in `kmeans.ts`) seeds centroids on the CPU with k-means++
-so the GPU loop converges to a better palette than random seeding would.
+The k-means++ **seed** is computed on the CPU (it's sequential and cheap over the
+small histogram); everything O(pixels) — histogram, the iteration loop, and the
+quantized preview — stays on the GPU. The loop is encoded and submitted **once**,
+with no per-iteration readback: only the seed's histogram and the final palette
+cross back to the CPU.
 
 Images are downscaled so the longest side is ≤ 512 px before clustering — a
-palette rarely needs full resolution, and this keeps each pass fast.
+palette rarely needs full resolution, and it keeps the histogram pass fast.
 
 ### Files
 
 ```
 src/
-  gpu/device.ts     WebGPU adapter/device init
-  image.ts          file -> downscaled packed-u32 pixel buffer
-  kmeans.ts         PaletteFinder (pipelines + iteration loop) + k-means++
-  main.ts           UI wiring
-  shaders/*.wgsl    the four GPU passes
+  gpu/device.ts       WebGPU adapter/device init
+  color.ts            sRGB <-> CIELAB (CPU, for seeding)
+  image.ts            file -> downscaled packed-u32 pixel buffer
+  palette-finder.ts   PaletteFinder (pipelines + GPU loop) + CPU k-means++ seed
+  main.ts             UI wiring
+  shaders/lab.wgsl    sRGB <-> CIELAB, shared (prepended into the passes that need it)
+  shaders/*.wgsl      the GPU passes
 ```

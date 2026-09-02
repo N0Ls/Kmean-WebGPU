@@ -6,8 +6,9 @@ small-but-vivid accents — instead of a wall of near-identical shades of the do
 > **TL;DR** — Plain k-means over pixels in RGB is biased toward big flat regions and
 > uses a distance that doesn't match human vision. We fix both: cluster in **CIELAB**
 > (perceptual distance) over a **colour histogram weighted by `√count`** (so a small
-> region can still earn a swatch). The clustering runs on the CPU over a tiny
-> histogram; the GPU still renders the quantised image.
+> region can still earn a swatch). The histogram, the weighted Lloyd loop, and the
+> quantised preview all run on the **GPU**; only the sequential k-means++ seed is
+> computed on the CPU.
 
 ---
 
@@ -65,15 +66,16 @@ J = Σ_bins  w_c · ‖ lab_c − nearest_centroid ‖²        with   w_c = cou
 
 ## 3. The pipeline
 
+Passes tagged `GPU` are compute/render shaders; the seed is the one CPU step.
+
 ```mermaid
 flowchart TD
-    A[Downscaled pixels<br/>RGBA u32] --> B[Build histogram<br/>5-bit/channel bins]
-    B --> C[Per bin: avg RGB,<br/>count, weight = count^0.5]
-    C --> D[Convert each bin RGB → Lab]
-    D --> E[Weighted k-means++ seeding<br/>in Lab]
-    E --> F[Weighted Lloyd iterations<br/>assign + weighted mean]
-    F --> G[Centroids in Lab → RGB<br/>carry pixel count in .w]
-    G --> H[GPU: assign + quantise + blit<br/>render the preview image]
+    A[Downscaled pixels<br/>RGBA u32] --> B["GPU: histogram<br/>atomic-bin, sum RGB + count"]
+    B --> C["GPU: bin prep<br/>avg RGB → Lab, weight = count^0.5"]
+    C --> S["CPU: weighted k-means++ seed<br/>in Lab (histogram read back once)"]
+    S --> F["GPU: weighted Lloyd loop<br/>assign in Lab + weighted mean<br/>(fixed-point atomics, no readback)"]
+    F --> G["GPU finalize: Lab → RGB<br/>carry pixel count in .w"]
+    G --> H["GPU: quantise (assign in Lab) + blit<br/>render the preview image"]
     G --> I[Palette UI<br/>sorted by prominence]
 ```
 
@@ -104,29 +106,40 @@ Using `weight` (not raw pixel count) is what lets a small vivid bin get seeded.
 A seeded PRNG (`mulberry32`) makes it deterministic: same image + `k` + seed → same palette.
 The **Shuffle** button just advances the seed.
 
-### Step 4 — Weighted Lloyd iterations
-Repeat until convergence (or the iteration budget):
+### Step 4 — Weighted Lloyd iterations (on the GPU)
 
-1. **Assign** each bin to its nearest centre in Lab.
-2. **Update** each centre to the **weighted mean** of its bins:
+Each iteration is two compute passes over the bins:
+
+1. **Assign** (`bassign.wgsl`, one thread/bin) each bin to its nearest centre in Lab.
+2. **Update** (`bfinalize.wgsl`, one thread/centre) each centre to the **weighted mean**
+   of its bins:
 
    ```
    centre_c = ( Σ_{i∈c} w_i · lab_i ) / ( Σ_{i∈c} w_i )
    ```
 
-3. **Empty cluster?** Re-seed it to a random weighted bin so it gets another chance to
-   capture colours (mirrors the GPU shader's behaviour).
-4. **Converge** when the largest centre movement is `< 0.5` Lab units (sub-perceptual).
+3. **Empty cluster?** The finalize shader re-seeds it to a live bin so it gets another
+   chance to capture colours.
 
-Because it runs over a few thousand bins × `k` × ~30 iterations, this is a handful of
-milliseconds on the CPU — no GPU needed for the clustering itself.
+WGSL atomics are integer-only, so the assign pass accumulates the fractional weighted
+Lab sums in **fixed point**: multiply by a scale `S`, `atomicAdd` as `u32`, and let `S`
+cancel in the finalize divide (`Σ(w·x·S) / Σ(w·S)`). `a`/`b` are biased by +128 to stay
+non-negative. `S = 64` keeps the largest accumulator inside a `u32` well past the 512px
+downscale cap (see the range note in `bassign.wgsl`).
+
+The whole loop is encoded and submitted **once** — no per-iteration readback. That's the
+point: early-stopping on centroid movement would force a GPU→CPU sync every iteration,
+which at these sizes costs more than just running the fixed iteration budget. Over a few
+thousand bins × `k` × ~30 iterations the loop is microseconds of GPU time.
 
 ### Step 5 — Back to RGB, then render
-Each Lab centroid is converted back to RGB and packed as `k*4` floats `(r, g, b, count)` —
-the **raw pixel count lands in `.w`** so the palette can still sort swatches by real
-prominence. That array has the exact same shape the GPU path produced, so the GPU renders
-the quantised preview straight from it with **no Lloyd loop** (`maxIterations: 0` → just the
-final assign → quantise → blit).
+
+The finalize shader converts each Lab centroid back to RGB and writes `k*4` floats
+`(r, g, b, count)` — the **raw pixel count lands in `.w`** so the palette can sort swatches
+by real prominence. The quantise pass then renders the preview against that palette,
+assigning each pixel to its nearest centroid **in Lab** (so the preview matches how the
+palette was clustered). Both the centroid RGBs and the palette read back to the UI come
+from the same buffer.
 
 ---
 
@@ -160,11 +173,10 @@ round-trip **exactly** (0/255 error) on primaries and sample colours.
 
 | Knob | Where | Effect |
 |------|-------|--------|
-| `WEIGHT_EXP` | `src/palette-finder.ts` | `0.5` ships. Lower (`0.35`, `0`) → more accents, less proportional. Higher (`0.7`, `1`) → back toward area-proportional. |
-| Histogram bits | `buildHistogram` (`>> 3`) | 5 bits merges more (fewer bins, smoother); 6 bits (`>> 2`) keeps finer distinctions. |
-| `k`, max iterations | UI sliders | number of palette colours / clustering budget. |
-| Convergence ε | Lloyd loop (`< 0.5`) | smaller = tighter centroids, more iterations. |
-| `PERCEPTUAL` | `src/main.ts` | `false` reverts to the original all-GPU RGB k-means. |
+| Weight exponent | `sqrt(count)` in `binprep.wgsl` + `seedFromHistogram` | Ships at `0.5`. Lower (→ `count^0` = 1) → more accents, less proportional; higher (→ `count^1`) → back toward area-proportional. Change both spots to keep seed and loop in sync. |
+| Histogram bits | `histogram.wgsl` / `binprep.wgsl` (`>> 3`) | 5 bits merges more (fewer bins, smoother); 6 bits (`>> 2`) keeps finer distinctions (and raises `NUM_BINS`). |
+| `k`, max iterations | UI sliders | number of palette colours / clustering budget (no early stop — the budget runs in full). |
+| Fixed-point scale `S` | `bassign.wgsl` | precision vs. `u32` headroom for the weighted accumulators; see the range note there before raising the downscale cap. |
 
 ---
 
@@ -173,13 +185,17 @@ round-trip **exactly** (0/255 error) on primaries and sample colours.
 - **Less proportional by design.** With `√count`, a 2%-of-the-image red can get a full
   swatch. That's usually what you want from a *palette*, but pushed too far (`p → 0`) it can
   surface rare/noisy specks. `0.5` is the guardrail.
-- **Clustering moved to the CPU.** It's faster here (tiny histogram) and far easier to tune,
-  but the *iterative* part no longer runs on the GPU. The GPU still does the per-pixel
-  quantise + render of the preview.
-- **Preview assignment is RGB.** The quantised image assigns pixels to the perceptual
-  centroids using the unchanged RGB `assign` shader. The **palette** is fully perceptual;
-  the preview is visually fine but not strictly perceptual. Making it perceptual means adding
-  the Lab conversion inside the shader — a small follow-up.
+- **No early stopping.** The Lloyd loop runs the full iteration budget rather than checking
+  convergence, because an early-stop test would need a centroid readback every iteration —
+  a GPU→CPU sync that, at these sizes, costs more than the extra iterations. The clustering
+  is microseconds either way.
+- **Fixed-point accumulation has a ceiling.** The weighted Lab sums are accumulated as
+  `u32` (WGSL has no float atomics). With `NUM_BINS = 2¹⁵` and `S = 64` that's safe to about
+  1M pixels; the 512px downscale cap keeps us well under it. Lifting the cap far past that
+  means lowering `S` or moving to 64-bit accumulation.
+- **Approximate weighting on the GPU.** Because the sums are truncated to fixed point, the
+  weighted mean is exact only up to `1/S` — far finer than the palette needs, but not the
+  bit-exact CPU float result.
 
 ---
 
@@ -187,8 +203,11 @@ round-trip **exactly** (0/255 error) on primaries and sample colours.
 
 | Concern | File |
 |---------|------|
-| sRGB ↔ Lab conversion | `src/color.ts` |
-| Histogram + weighted Lab k-means | `findPalettePerceptual` in `src/palette-finder.ts` |
-| Original all-GPU RGB k-means | `PaletteFinder` + `kmeansPlusPlusInit` in `src/palette-finder.ts` |
-| Mode toggle + wiring | `PERCEPTUAL` in `src/main.ts` |
-| GPU assign / finalize / quantise / blit | `src/shaders/*.wgsl` |
+| sRGB ↔ Lab conversion (CPU, for seeding) | `src/color.ts` |
+| sRGB ↔ Lab conversion (GPU, shared) | `src/shaders/lab.wgsl` |
+| Pipeline + GPU loop orchestration | `PaletteFinder` in `src/palette-finder.ts` |
+| CPU weighted k-means++ seed | `seedFromHistogram` in `src/palette-finder.ts` |
+| GPU histogram → bin prep | `src/shaders/histogram.wgsl`, `binprep.wgsl` |
+| GPU weighted Lloyd loop | `src/shaders/bassign.wgsl`, `bfinalize.wgsl` |
+| GPU quantise (assign in Lab) / blit | `src/shaders/quantize.wgsl`, `blit.wgsl` |
+| UI wiring | `src/main.ts` |
