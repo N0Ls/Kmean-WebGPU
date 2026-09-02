@@ -5,10 +5,23 @@
   --muted: #9a9a9a;
   --line: #e4e4e4;
   --line-strong: #cfcfcf;
+  --error-bg: #fff5f5;
+  --error-line: #e0b4b4;
+  --error-fg: #8a1f1f;
   font-family: "Montserrat", system-ui, -apple-system, Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
+
+.error {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: var(--error-fg);
+  background: var(--error-bg);
+  border: 1px solid var(--error-line);
+}
+.error[hidden] { display: none; }
 
 body {
   margin: 0;

@@ -30,6 +30,7 @@ const infoRgb01 = $<HTMLSpanElement>("infoRgb01");
 const infoRgb255 = $<HTMLSpanElement>("infoRgb255");
 const infoHsl = $<HTMLSpanElement>("infoHsl");
 const downloadButton = $<HTMLButtonElement>("download");
+const errorEl = $<HTMLDivElement>("error");
 
 // Slider value read-outs + black fill on the left of the track.
 kInput.addEventListener("input", () => {
@@ -42,6 +43,16 @@ itersInput.addEventListener("input", () => {
 });
 updateSliderFill(kInput);
 updateSliderFill(itersInput);
+
+if (!("gpu" in navigator)) {
+  showError(
+    "This demo needs WebGPU, which this browser doesn't support. " +
+    "Try the latest Chrome or Edge (or Safari 18+).",
+  );
+  fileInput.disabled = true;
+  runButton.disabled = true;
+  shuffleButton.disabled = true;
+}
 
 // App state
 let device: GPUDevice | null = null;
@@ -65,6 +76,7 @@ fileInput.addEventListener("change", async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
   try {
+    hideError();
     currentImage = await loadImageToPixels(file);
 
     if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -106,6 +118,7 @@ async function runClusterization() {
   running = true;
   runButton.disabled = true;
   shuffleButton.disabled = true;
+  hideError();
 
   try {
     const finder = await initPaletteFinder();
@@ -291,4 +304,23 @@ function updateSliderFill(input: HTMLInputElement) {
 
 function reportError(err: unknown) {
   console.error(err);
+  const msg = err instanceof Error ? err.message : String(err);
+  // WebGPU init failures (no `navigator.gpu`, no adapter, lost device) all deserve
+  // the actionable browser-support hint rather than a raw message dump.
+  const isWebGPU = /webgpu|gpu adapter/i.test(msg);
+  showError(
+    isWebGPU
+      ? "Couldn't start WebGPU. This demo needs a WebGPU-capable browser — " +
+      "try the latest Chrome or Edge (or Safari 18+)."
+      : `Something went wrong: ${msg}`,
+  );
+}
+
+function showError(message: string) {
+  errorEl.textContent = message;
+  errorEl.hidden = false;
+}
+
+function hideError() {
+  errorEl.hidden = true;
 }
