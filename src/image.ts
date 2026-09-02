@@ -8,7 +8,7 @@ export interface LoadedImage {
 // u32 per pixel, ready for the GPU. No point clustering at full res for a palette.
 export async function loadImageToPixels(
   file: File,
-  maxDim = 512,
+  maxDim = 4096,
 ): Promise<LoadedImage> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
