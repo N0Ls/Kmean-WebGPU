@@ -8,6 +8,7 @@
   --error-bg: #fff5f5;
   --error-line: #e0b4b4;
   --error-fg: #8a1f1f;
+  --overlay: rgba(255, 255, 255, 0.8);
   font-family: "Montserrat", system-ui, -apple-system, Arial, sans-serif;
 }
 
@@ -58,6 +59,25 @@ header h1 {
   transition: border-color 0.15s, color 0.15s;
 }
 .file:hover span { border-color: var(--fg); color: var(--fg); }
+
+.dropzone {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: var(--overlay);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+body.dragging .dropzone { opacity: 1; }
+.dropzone span {
+  padding: 2rem 3rem;
+  font-size: 1rem;
+  letter-spacing: 0.5px;
+  border: 1px dashed var(--fg);
+}
 
 /* ---- Sliders ---- */
 .control { margin-bottom: 0.5rem; }

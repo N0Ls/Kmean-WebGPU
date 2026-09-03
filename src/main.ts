@@ -72,9 +72,12 @@ async function initPaletteFinder(): Promise<PaletteFinder> {
   return finder;
 }
 
-fileInput.addEventListener("change", async () => {
+fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
-  if (!file) return;
+  if (file) loadFile(file);
+});
+
+async function loadFile(file: File) {
   try {
     hideError();
     currentImage = await loadImageToPixels(file);
@@ -103,6 +106,51 @@ fileInput.addEventListener("change", async () => {
   } catch (err) {
     reportError(err);
   }
+}
+
+// ---- Drag and drop, anywhere on the page ----
+let dragDepth = 0;
+
+const isFileDrag = (e: DragEvent) =>
+  Array.from(e.dataTransfer?.types ?? []).includes("Files");
+
+function endDrag() {
+  dragDepth = 0;
+  document.body.classList.remove("dragging");
+}
+
+window.addEventListener("dragenter", (e) => {
+  if (fileInput.disabled || !isFileDrag(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  document.body.classList.add("dragging");
+});
+
+window.addEventListener("dragover", (e) => {
+  if (fileInput.disabled || !isFileDrag(e)) return;
+  e.preventDefault(); // without this the browser just opens the file
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+});
+
+window.addEventListener("dragleave", (e) => {
+  if (!isFileDrag(e)) return;
+  if (--dragDepth <= 0) endDrag();
+});
+
+window.addEventListener("drop", (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  endDrag();
+  if (fileInput.disabled) return;
+
+  const file = Array.from(e.dataTransfer?.files ?? []).find((f) =>
+    f.type.startsWith("image/"),
+  );
+  if (!file) {
+    showError("That file isn't an image. Drop a PNG, JPEG, WebP, or GIF.");
+    return;
+  }
+  loadFile(file);
 });
 
 runButton.addEventListener("click", () => runClusterization());

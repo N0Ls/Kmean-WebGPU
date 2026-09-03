@@ -21,7 +21,7 @@
 
       <label class="file">
         <input type="file" id="file" accept="image/*" />
-        <span id="fileLabel">Choose image...</span>
+        <span id="fileLabel">Choose image... or drop one anywhere</span>
       </label>
 
       <div class="control">
@@ -73,5 +73,9 @@
 
       <script type="module" src="/src/main.ts"></script>
     </main>
+
+    <div class="dropzone" id="dropzone" aria-hidden="true">
+      <span>Drop an image</span>
+    </div>
   </body>
 </html>
